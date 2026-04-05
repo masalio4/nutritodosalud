@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NutriTodoSalud - Analizador de Comidas</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc;
+        }
+
+        .glass-card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(226, 232, 240, 0.8);
+        }
+
+        .loading-shimmer {
+            background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
+        }
+
+        @keyframes shimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+
+        #camera-preview {
+            transform: scaleX(1); /* No mirror for back camera */
+            object-fit: cover;
+        }
+    </style>
+</head>
+<body class="pb-20">
+
+    <!-- Header -->
+    <header class="p-4 bg-white shadow-sm sticky top-0 z-50">
+        <div class="flex items-center justify-between max-w-md mx-auto">
+            <h1 class="text-xl font-bold text-green-600 flex items-center gap-2">
+                <i class="fas fa-heartbeat"></i> NutriTodoSalud
+            </h1>
+            <button onclick="toggleHistory()" class="text-gray-500 hover:text-green-600 transition-colors">
+                <i class="fas fa-history text-lg"></i>
+            </button>
+        </div>
+    </header>
+
+    <main class="max-w-md mx-auto p-4 space-y-6">
+        
+        <!-- Camera / Upload Section -->
+        <section id="input-section" class="space-y-4">
+            <div id="media-container" class="relative aspect-square rounded-3xl overflow-hidden bg-gray-200 shadow-inner group">
+                <video id="camera-preview" class="hidden w-full h-full"></video>
+                <img id="image-preview" class="hidden w-full h-full object-cover">
+                
+                <div id="placeholder-ui" class="absolute inset-0 flex flex-col items-center justify-center text-gray-400 p-8 text-center">
+                    <div class="w-20 h-20 bg-white rounded-full flex items-center justify-center mb-4 shadow-sm">
+                        <i class="fas fa-camera text-3xl text-green-500"></i>
+                    </div>
+                    <p class="text-sm font-medium">Toma una foto de tu plato para analizarlo con NutriTodoSalud</p>
+                </div>
+
+                <!-- Analysis Overlay -->
+                <div id="analyzing-overlay" class="hidden absolute inset-0 bg-black/60 flex flex-col items-center justify-center text-white p-6 text-center">
+                    <div class="w-16 h-16 border-4 border-green-400 border-t-transparent rounded-full animate-spin mb-4"></div>
+                    <p class="text-lg font-semibold">Analizando tu comida...</p>
+                    <p class="text-xs text-gray-300 mt-2">NutriTodoSalud está identificando ingredientes</p>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+                <button onclick="startCamera()" id="btn-camera" class="bg-green-600 text-white p-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-transform">
+                    <i class="fas fa-video"></i> Usar Cámara
+                </button>
+                <button onclick="document.getElementById('file-input').click()" class="bg-white text-gray-700 border border-gray-200 p-4 rounded-2xl flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-transform">
+                    <i class="fas fa-image"></i> Galería
+                </button>
+                <input type="file" id="file-input" accept="image/*" class="hidden" onchange="handleFileUpload(event)">
+            </div>
+
+            <button id="btn-capture" class="hidden w-full bg-red-500 text-white p-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg font-bold" onclick="capturePhoto()">
+                <i class="fas fa-circle text-xs"></i> CAPTURAR AHORA
+            </button>
+        </section>
+
+        <!-- Results Section -->
+        <section id="results-section" class="hidden space-y-4">
+            <div class="glass-card rounded-3xl p-6 shadow-sm border-t-4 border-t-green-500">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="font-bold text-gray-800 text-lg">Resumen de NutriTodoSalud</h2>
+                    <span id="res-calories" class="text-2xl font-black text-green-600">0 <small class="text-xs text-gray-500">kcal</small></span>
+                </div>
+
+                <div class="grid grid-cols-3 gap-3 mb-6">
+                    <div class="text-center p-3 rounded-2xl bg-blue-50">
+                        <p class="text-[10px] text-blue-600 font-bold uppercase tracking-wider">Proteína</p>
+                        <p id="res-prot" class="text-lg font-bold text-blue-900">0g</p>
+                    </div>
+                    <div class="text-center p-3 rounded-2xl bg-orange-50">
+                        <p class="text-[10px] text-orange-600 font-bold uppercase tracking-wider">Carbos</p>
+                        <p id="res-carb" class="text-lg font-bold text-orange-900">0g</p>
+                    </div>
+                    <div class="text-center p-3 rounded-2xl bg-yellow-50">
+                        <p class="text-[10px] text-yellow-600 font-bold uppercase tracking-wider">Grasas</p>
+                        <p id="res-fat" class="text-lg font-bold text-yellow-900">0g</p>
+                    </div>
+                </div>
+
+                <div class="space-y-2">
+                    <p class="text-sm font-semibold text-gray-600">Desglose detectado:</p>
+                    <ul id="res-items" class="text-sm text-gray-500 space-y-1">
+                        <!-- Items injected here -->
+                    </ul>
+                </div>
+            </div>
+            
+            <button onclick="resetApp()" class="w-full text-gray-400 text-sm font-medium py-2">
+                <i class="fas fa-redo mr-2"></i> Analizar otro plato
+            </button>
+        </section>
+
+        <!-- History Section (Overlay) -->
+        <div id="history-panel" class="hidden fixed inset-0 bg-black/50 z-[100] p-4 flex flex-col justify-end">
+            <div class="bg-white rounded-t-3xl h-[80vh] w-full max-w-md mx-auto overflow-hidden flex flex-col">
+                <div class="p-6 border-b flex justify-between items-center">
+                    <h3 class="text-xl font-bold">Historial NutriTodoSalud</h3>
+                    <button onclick="toggleHistory()" class="text-gray-400"><i class="fas fa-times text-xl"></i></button>
+                </div>
+                <div id="history-list" class="flex-1 overflow-y-auto p-6 space-y-4">
+                    <!-- History items here -->
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <script>
+        const apiKey = ""; // API Key handled by environment
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'nutritodosalud-id';
+        
+        let stream = null;
+        let currentPhotoBase64 = null;
+        let mealHistory = JSON.parse(localStorage.getItem('mealHistory') || '[]');
+
+        async function startCamera() {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: 'environment' }, 
+                    audio: false 
+                });
+                const video = document.getElementById('camera-preview');
+                video.srcObject = stream;
+                video.play();
+                
+                video.classList.remove('hidden');
+                document.getElementById('placeholder-ui').classList.add('hidden');
+                document.getElementById('image-preview').classList.add('hidden');
+                document.getElementById('btn-capture').classList.remove('hidden');
+                document.getElementById('btn-camera').classList.add('hidden');
+            } catch (err) {
+                alert("No se pudo acceder a la cámara. Por favor permite los permisos o sube una imagen desde la galería.");
+            }
+        }
+
+        function capturePhoto() {
+            const video = document.getElementById('camera-preview');
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0);
+            
+            currentPhotoBase64 = canvas.toDataURL('image/jpeg').split(',')[1];
+            
+            // Show preview
+            const imgPreview = document.getElementById('image-preview');
+            imgPreview.src = canvas.toDataURL('image/jpeg');
+            imgPreview.classList.remove('hidden');
+            video.classList.add('hidden');
+            document.getElementById('btn-capture').classList.add('hidden');
+            document.getElementById('btn-camera').classList.remove('hidden');
+            
+            stopCamera();
+            analyzeMeal();
+        }
+
+        function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const imgPreview = document.getElementById('image-preview');
+                imgPreview.src = e.target.result;
+                imgPreview.classList.remove('hidden');
+                document.getElementById('placeholder-ui').classList.add('hidden');
+                document.getElementById('camera-preview').classList.add('hidden');
+                
+                currentPhotoBase64 = e.target.result.split(',')[1];
+                analyzeMeal();
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function stopCamera() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+        }
+
+        async function analyzeMeal() {
+            if (!currentPhotoBase64) return;
+
+            document.getElementById('analyzing-overlay').classList.remove('hidden');
+            document.getElementById('results-section').classList.add('hidden');
+
+            const systemPrompt = `Eres un experto nutricionista. Analiza la imagen del plato de comida proporcionada para la aplicación NutriTodoSalud. 
+            Identifica cada alimento y estima su peso/porción. 
+            Devuelve un JSON con la siguiente estructura estricta:
+            {
+              "total_calories": number,
+              "protein_g": number,
+              "carbs_g": number,
+              "fat_g": number,
+              "items": [{"name": string, "calories": number}],
+              "summary_text": string
+            }
+            Asegúrate de que los valores sean lo más precisos posibles basándote en lo visual.`;
+
+            const payload = {
+                contents: [{
+                    parts: [
+                        { text: "Analiza esta comida para NutriTodoSalud y dime sus macros." },
+                        { inlineData: { mimeType: "image/jpeg", data: currentPhotoBase64 } }
+                    ]
+                }],
+                systemInstruction: { parts: [{ text: systemPrompt }] },
+                generationConfig: {
+                    responseMimeType: "application/json"
+                }
+            };
+
+            let retries = 5;
+            let delay = 1000;
+
+            while (retries > 0) {
+                try {
+                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+                        method: 'POST',
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) throw new Error('API Error');
+
+                    const result = await response.json();
+                    const data = JSON.parse(result.candidates[0].content.parts[0].text);
+                    displayResults(data);
+                    saveToHistory(data);
+                    return;
+                } catch (err) {
+                    retries--;
+                    if (retries === 0) {
+                        alert("Hubo un error al analizar la imagen. Por favor intenta de nuevo.");
+                        document.getElementById('analyzing-overlay').classList.add('hidden');
+                        return;
+                    }
+                    await new Promise(r => setTimeout(r, delay));
+                    delay *= 2;
+                }
+            }
+        }
+
+        function displayResults(data) {
+            document.getElementById('analyzing-overlay').classList.add('hidden');
+            document.getElementById('results-section').classList.remove('hidden');
+
+            document.getElementById('res-calories').innerHTML = `${data.total_calories} <small class="text-xs text-gray-500">kcal</small>`;
+            document.getElementById('res-prot').innerText = `${data.protein_g}g`;
+            document.getElementById('res-carb').innerText = `${data.carbs_g}g`;
+            document.getElementById('res-fat').innerText = `${data.fat_g}g`;
+
+            const list = document.getElementById('res-items');
+            list.innerHTML = data.items.map(item => 
+                `<li class="flex justify-between border-b border-gray-100 pb-1">
+                    <span>${item.name}</span>
+                    <span class="font-medium">${item.calories} kcal</span>
+                </li>`
+            ).join('');
+        }
+
+        function saveToHistory(data) {
+            const entry = {
+                id: Date.now(),
+                timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                ...data
+            };
+            mealHistory.unshift(entry);
+            if (mealHistory.length > 10) mealHistory.pop();
+            localStorage.setItem('mealHistory', JSON.stringify(mealHistory));
+            renderHistory();
+        }
+
+        function renderHistory() {
+            const container = document.getElementById('history-list');
+            if (mealHistory.length === 0) {
+                container.innerHTML = `<p class="text-center text-gray-400 mt-10">No hay comidas registradas en NutriTodoSalud hoy.</p>`;
+                return;
+            }
+
+            container.innerHTML = mealHistory.map(meal => `
+                <div class="p-4 rounded-2xl border border-gray-100 bg-gray-50">
+                    <div class="flex justify-between items-start mb-2">
+                        <span class="text-xs font-bold text-gray-400 uppercase">${meal.timestamp}</span>
+                        <span class="text-sm font-black text-green-600">${meal.total_calories} kcal</span>
+                    </div>
+                    <div class="flex gap-4 text-xs text-gray-600">
+                        <span>P: ${meal.protein_g}g</span>
+                        <span>C: ${meal.carbs_g}g</span>
+                        <span>G: ${meal.fat_g}g</span>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function toggleHistory() {
+            const panel = document.getElementById('history-panel');
+            panel.classList.toggle('hidden');
+            if (!panel.classList.contains('hidden')) renderHistory();
+        }
+
+        function resetApp() {
+            document.getElementById('results-section').classList.add('hidden');
+            document.getElementById('image-preview').classList.add('hidden');
+            document.getElementById('placeholder-ui').classList.remove('hidden');
+            currentPhotoBase64 = null;
+        }
+
+        // Initialize history on load
+        renderHistory();
+    </script>
+</body>
+</html>
